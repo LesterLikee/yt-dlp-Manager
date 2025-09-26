@@ -1,4 +1,4 @@
-# 📥 Universal Media Downloader --- Workflow Documentation
+# 📥 yt-dlp Manager --- Workflow Documentation
 
 This project is a modular **YouTube/media downloader** built around
 `yt-dlp`.\
@@ -138,7 +138,7 @@ It provides a **menu-driven console interface**, supports
 Example:
 
 ``` yaml
-# Universal Downloader Config (config.yml)
+# yt-dlp Manager Downloader Config (config.yml)
 download_path: "E:/Downloads"
 max_parallel_downloads: 2
 categories:
