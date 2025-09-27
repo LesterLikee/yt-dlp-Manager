@@ -12,7 +12,7 @@ from rich.progress import Progress, BarColumn, DownloadColumn, TransferSpeedColu
 # Update check for dependencies
 try:
     print("🔄 Checking for updates: yt-dlp, rich, PyYAML, plyer...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "rich", "PyYAML", "plyer"], check=False)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "rich", "PyYAML", "plyer", "requests"], check=False)
 except Exception as e:
     print(f"⚠️ Dependency update check failed: {e}")
 
