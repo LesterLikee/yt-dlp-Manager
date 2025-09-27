@@ -27,9 +27,12 @@ def ensure_deps():
         except ImportError:
             missing.append(pkg)
 
+    # Install missing ones (show logs)
     if missing:
         print(f"⬇️ Installing missing packages: {', '.join(missing)} ...")
         subprocess.run([sys.executable, "-m", "pip", "install"] + missing, check=False)
+    else:
+        print("✅ All required packages are installed.")
 
     # Check outdated packages
     result = subprocess.run(
@@ -42,15 +45,51 @@ def ensure_deps():
     if needs_update:
         ans = input(f"⚠️ Updates available for: {', '.join(needs_update)}. Update now? (y/n): ").strip().lower()
         if ans == "y":
-            subprocess.run([sys.executable, "-m", "pip", "install", "-U"] + needs_update, check=False)
+            print("🔄 Updating dependencies...")
+            subprocess.run([sys.executable, "-m", "pip", "install", "-U"] + needs_update)
             print("✅ Dependencies updated.")
     else:
         print("✅ All dependencies are up to date.")
+
+
+# ----------------- FFmpeg (Full) check & install/update -----------------
+def check_ffmpeg_full():
+    try:
+        # Verify ffmpeg and ffprobe exist and are callable
+        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        subprocess.run(["ffprobe", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        print("✅ FFmpeg (full) is installed and working.")
+
+        # Try upgrading on Windows
+        if platform.system() == "Windows":
+            result = subprocess.run(
+                ["winget", "upgrade", "-e", "--id", "Gyan.FFmpeg.Full",
+                 "--accept-source-agreements", "--accept-package-agreements"],
+                capture_output=True, text=True
+            )
+            if "No applicable update found" not in result.stdout:
+                print("🔄 Updating FFmpeg...")
+                print(result.stdout)
+            else:
+                print("✅ FFmpeg is up to date.")
+
+    except Exception:
+        print("⚠️ FFmpeg (full) not found.")
+        if platform.system() == "Windows":
+            print("⬇️ Installing FFmpeg (full)...")
+            subprocess.run(
+                ["winget", "install", "-e", "--id", "Gyan.FFmpeg.Full", "--source", "winget",
+                 "--accept-source-agreements", "--accept-package-agreements"]
+            )
+        else:
+            print("⚠️ Please install FFmpeg manually from: https://ffmpeg.org/download.html")
+
 
 # Run deps check before imports
 ensure_deps()
 
 # Imports after dependency check
+check_ffmpeg_full()
 import yt_dlp
 import requests
 from plyer import notification
