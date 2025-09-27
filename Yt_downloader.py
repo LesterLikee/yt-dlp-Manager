@@ -45,7 +45,7 @@ REPO_NAME = "yt-dlp-Manager"
 
 def check_for_update():
     config = load_config()
-    local_ver = config.get("installed_version", "none")
+    local_ver = config.get("installed_version")
 
     try:
         url = f"https://api.github.com/repos/{REPO_USER}/{REPO_NAME}/releases/latest"
@@ -54,14 +54,14 @@ def check_for_update():
 
         print(f"Local version: {local_ver}, Latest version: {latest_tag}")
 
-        # 🔹 If this is the first run, set version automatically
-        if local_ver == "none" and latest_tag != "unknown":
+        # 🔹 First run: no version yet
+        if not local_ver and latest_tag != "unknown":
             config["installed_version"] = latest_tag
             save_config(config)
             print(f"✅ First run detected, setting version to {latest_tag}")
             return
 
-        # 🔹 If update available, ask user
+        # 🔹 Update available
         if latest_tag != "unknown" and latest_tag != local_ver:
             ans = input(f"\n⚠️ Update {latest_tag} available (you have {local_ver}). Update now? (y/n): ").strip().lower()
             if ans == "y":
@@ -70,7 +70,8 @@ def check_for_update():
                 z = zipfile.ZipFile(io.BytesIO(requests.get(dl_url).content))
                 extract_dir = f"{REPO_NAME}-{latest_tag}"
                 z.extractall(".")
-                # copy files over
+
+                # Copy files over (config won’t be in repo, so no overwrite risk)
                 for item in os.listdir(extract_dir):
                     src = os.path.join(extract_dir, item)
                     dst = os.path.join(os.getcwd(), item)
@@ -82,14 +83,15 @@ def check_for_update():
                     shutil.move(src, dst)
                 shutil.rmtree(extract_dir)
 
+                # ✅ Only bump version number in config
                 config["installed_version"] = latest_tag
                 save_config(config)
 
                 print("✅ Update installed. Please restart the program.")
                 sys.exit(0)
+
     except Exception as e:
         print(f"[!] Update check failed: {e}")
-
 
 # ----------------- Playlist/Profile/Post Handling -----------------
 def handle_playlist(url):
