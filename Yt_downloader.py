@@ -51,8 +51,6 @@ def ensure_deps():
     else:
         print("✅ All dependencies are up to date.")
 
-
-# ----------------- FFmpeg (Full) check & install/update -----------------
 # ----------------- FFmpeg (Full) check & install/update -----------------
 def check_ffmpeg_full():
     try:
@@ -121,15 +119,10 @@ REPO_USER = "LesterLikee"
 REPO_NAME = "yt-dlp-Manager"
 
 def check_for_update():
+    config = load_config()
+    local_ver = config.get("installed_version")
+
     try:
-        # Load existing config or empty dict
-        try:
-            config = load_config()
-        except FileNotFoundError:
-            config = {}
-
-        local_ver = config.get("installed_version")
-
         url = f"https://api.github.com/repos/{REPO_USER}/{REPO_NAME}/releases/latest"
         r = requests.get(url, timeout=10)
         r.raise_for_status()
@@ -139,7 +132,7 @@ def check_for_update():
         if not local_ver and latest_tag != "unknown":
             config["installed_version"] = latest_tag
             save_config(config)
-            print(f"✅ First run detected, created config with version {latest_tag}")
+            print(f"✅ First run detected, set version to {latest_tag}")
             return
 
         # Update available
@@ -148,22 +141,37 @@ def check_for_update():
             if ans == "y":
                 dl_url = f"https://github.com/{REPO_USER}/{REPO_NAME}/archive/refs/tags/{latest_tag}.zip"
                 print(f"⬇️ Downloading update from {dl_url}...")
-                z = zipfile.ZipFile(io.BytesIO(requests.get(dl_url).content))
-                extract_dir = f"{REPO_NAME}-{latest_tag}"
-                z.extractall(".")
 
-                for item in os.listdir(extract_dir):
-                    src = os.path.join(extract_dir, item)
-                    dst = os.path.join(os.getcwd(), item)
-                    if os.path.exists(dst):
-                        if os.path.isdir(dst):
-                            shutil.rmtree(dst)
+                # Download zip
+                zip_path = "update.zip"
+                with open(zip_path, "wb") as f:
+                    f.write(requests.get(dl_url).content)
+
+                # Extract to temp folder
+                extract_dir = f"update_tmp_{latest_tag}"
+                with zipfile.ZipFile(zip_path, "r") as z:
+                    z.extractall(extract_dir)
+
+                # Find actual repo folder inside extracted
+                inner_dir = next(d for d in os.listdir(extract_dir) if d.startswith(REPO_NAME))
+
+                # Copy files to current folder (overwrite)
+                src_path = os.path.join(extract_dir, inner_dir)
+                for item in os.listdir(src_path):
+                    s = os.path.join(src_path, item)
+                    d = os.path.join(os.getcwd(), item)
+                    if os.path.exists(d):
+                        if os.path.isdir(d):
+                            shutil.rmtree(d)
                         else:
-                            os.remove(dst)
-                    shutil.move(src, dst)
+                            os.remove(d)
+                    shutil.move(s, d)
+
+                # Cleanup
+                os.remove(zip_path)
                 shutil.rmtree(extract_dir)
 
-                # Only update version key
+                # Save new version
                 config["installed_version"] = latest_tag
                 save_config(config)
 
