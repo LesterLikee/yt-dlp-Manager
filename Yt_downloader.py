@@ -4,20 +4,22 @@
 # Save as: Yt_downloader.py
 # ===============================================
 
-import os, sys, subprocess, time, traceback, platform, shutil, zipfile, io, requests
+import os, sys, subprocess, time, traceback, platform, shutil, zipfile, io
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 from rich.progress import Progress, BarColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn, TextColumn
 
 # Update check for dependencies
 try:
-    print("🔄 Checking for updates: yt-dlp, rich, PyYAML, plyer...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "rich", "PyYAML", "plyer", "requests"], check=False)
+    print("🔄 Checking for updates: yt-dlp, rich, PyYAML, plyer, requests...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "-U",
+                    "yt-dlp", "rich", "PyYAML", "plyer", "requests"], check=False)
 except Exception as e:
     print(f"⚠️ Dependency update check failed: {e}")
 
 # Imports after dependency update
 import yt_dlp
+import requests
 from plyer import notification
 
 # GUI + sound for file selection
