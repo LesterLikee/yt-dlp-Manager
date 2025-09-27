@@ -53,23 +53,31 @@ def ensure_deps():
 
 
 # ----------------- FFmpeg (Full) check & install/update -----------------
+# ----------------- FFmpeg (Full) check & install/update -----------------
 def check_ffmpeg_full():
     try:
-        # Verify ffmpeg and ffprobe exist and are callable
+        # Verify ffmpeg and ffprobe exist
         subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         subprocess.run(["ffprobe", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         print("✅ FFmpeg (full) is installed and working.")
 
-        # Try upgrading on Windows
+        # Try checking upgrade on Windows
         if platform.system() == "Windows":
             result = subprocess.run(
-                ["winget", "upgrade", "-e", "--id", "Gyan.FFmpeg.Full",
-                 "--accept-source-agreements", "--accept-package-agreements"],
+                ["winget", "upgrade", "ffmpeg", "--accept-source-agreements", "--accept-package-agreements"],
                 capture_output=True, text=True
             )
             if "No applicable update found" not in result.stdout:
-                print("🔄 Updating FFmpeg...")
-                print(result.stdout)
+                ans = input("⚠️ FFmpeg update available. Update now? (y/n): ").strip().lower()
+                if ans == "y":
+                    print("🔄 Updating FFmpeg...")
+                    subprocess.run(
+                        ["winget", "upgrade", "ffmpeg",
+                         "--accept-source-agreements", "--accept-package-agreements"]
+                    )
+                    print("✅ FFmpeg updated.")
+                else:
+                    print("⏭️ Skipped FFmpeg update.")
             else:
                 print("✅ FFmpeg is up to date.")
 
@@ -78,12 +86,11 @@ def check_ffmpeg_full():
         if platform.system() == "Windows":
             print("⬇️ Installing FFmpeg (full)...")
             subprocess.run(
-                ["winget", "install", "-e", "--id", "Gyan.FFmpeg.Full", "--source", "winget",
+                ["winget", "install", "ffmpeg",
                  "--accept-source-agreements", "--accept-package-agreements"]
             )
         else:
             print("⚠️ Please install FFmpeg manually from: https://ffmpeg.org/download.html")
-
 
 # Run deps check before imports
 ensure_deps()
