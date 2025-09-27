@@ -4,19 +4,19 @@
 # Save as: Yt_downloader.py
 # ===============================================
 
-import os, sys, subprocess, time, traceback, platform
+import os, sys, subprocess, time, traceback, platform, shutil, zipfile, io, requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 from rich.progress import Progress, BarColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn, TextColumn
 
-# Update check
+# Update check for dependencies
 try:
     print("🔄 Checking for updates: yt-dlp, rich, PyYAML, plyer...")
     subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "rich", "PyYAML", "plyer"], check=False)
 except Exception as e:
-    print(f"⚠️ Update check failed: {e}")
+    print(f"⚠️ Dependency update check failed: {e}")
 
-# Imports after update
+# Imports after dependency update
 import yt_dlp
 from plyer import notification
 
@@ -37,28 +37,109 @@ from format_manager import choose_format_and_postprocessors, ask_subtitles_optio
 
 console = Console()
 
+# ----------------- Auto-updater -----------------
+REPO_USER = "LesterLikee"
+REPO_NAME = "yt-dlp-Manager"
 
-# ----------------- Playlist Handling -----------------
-def handle_playlist(url):
-    """Basic playlist handling, supports flat extraction"""
+def check_for_update():
+    config = load_config()
+    local_ver = config.get("installed_version", "none")
+
     try:
-        console.print("[cyan]Scanning playlist (fast mode)...[/cyan]")
-        opts = {"quiet": True, "no_warnings": True, "extract_flat": True}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except Exception:
-        return [url]
+        url = f"https://api.github.com/repos/{REPO_USER}/{REPO_NAME}/releases/latest"
+        r = requests.get(url, timeout=10)
+        latest_tag = r.json().get("tag_name", "unknown")
 
-    if "entries" not in info:
-        return [url]
-    return [e["url"] for e in info["entries"] if e]
+        print(f"Local version: {local_ver}, Latest version: {latest_tag}")
 
+        # 🔹 If this is the first run, set version automatically
+        if local_ver == "none" and latest_tag != "unknown":
+            config["installed_version"] = latest_tag
+            save_config(config)
+            print(f"✅ First run detected, setting version to {latest_tag}")
+            return
+
+        # 🔹 If update available, ask user
+        if latest_tag != "unknown" and latest_tag != local_ver:
+            ans = input(f"\n⚠️ Update {latest_tag} available (you have {local_ver}). Update now? (y/n): ").strip().lower()
+            if ans == "y":
+                dl_url = f"https://github.com/{REPO_USER}/{REPO_NAME}/archive/refs/tags/{latest_tag}.zip"
+                print(f"⬇️ Downloading update from {dl_url}...")
+                z = zipfile.ZipFile(io.BytesIO(requests.get(dl_url).content))
+                extract_dir = f"{REPO_NAME}-{latest_tag}"
+                z.extractall(".")
+                # copy files over
+                for item in os.listdir(extract_dir):
+                    src = os.path.join(extract_dir, item)
+                    dst = os.path.join(os.getcwd(), item)
+                    if os.path.exists(dst):
+                        if os.path.isdir(dst):
+                            shutil.rmtree(dst)
+                        else:
+                            os.remove(dst)
+                    shutil.move(src, dst)
+                shutil.rmtree(extract_dir)
+
+                config["installed_version"] = latest_tag
+                save_config(config)
+
+                print("✅ Update installed. Please restart the program.")
+                sys.exit(0)
+    except Exception as e:
+        print(f"[!] Update check failed: {e}")
+
+
+# ----------------- Playlist/Profile/Post Handling -----------------
+def handle_playlist(url):
+    """
+    Detect whether URL is a single item, playlist, or full profile/channel.
+    If private, prompt user for cookies.txt and retry.
+    Returns list of URLs to download.
+    """
+    opts = {"quiet": True, "no_warnings": True}
+
+    def try_extract(cookies=None):
+        o = dict(opts)
+        if cookies:
+            o["cookiefile"] = cookies
+        with yt_dlp.YoutubeDL(o) as ydl:
+            return ydl.extract_info(url, download=False)
+
+    try:
+        info = try_extract()
+    except Exception as e:
+        if "login" in str(e).lower() or "private" in str(e).lower():
+            console.print("[yellow]Private or restricted content detected. A cookies.txt file is required.[/yellow]")
+            cookies = console.input("Enter path to cookies.txt (or press Enter to cancel): ").strip()
+            if cookies and os.path.exists(cookies):
+                try:
+                    info = try_extract(cookies)
+                except Exception as e2:
+                    console.print(f"[red]Failed even with cookies: {e2}[/red]")
+                    return [url]
+            else:
+                console.print("[red]No cookies provided, skipping private profile.[/red]")
+                return []
+        else:
+            console.print(f"[red]Failed to extract info: {e}[/red]")
+            return [url]
+
+    # If it's a playlist/profile/channel (contains entries)
+    if "entries" in info and info["entries"]:
+        console.print(f"[cyan]Found collection with {len(info['entries'])} items[/cyan]")
+        return [e["url"] for e in info["entries"] if e]
+
+    # Single video/image
+    return [url]
 
 # ----------------- Download Worker -----------------
 def download_worker(url, out_path, ydl_opts_base, retries, progress, task_id):
     opts = dict(ydl_opts_base)
-    opts["outtmpl"] = os.path.join(out_path, "%(title).100s.%(ext)s")
+    opts["outtmpl"] = os.path.join(out_path, "%(uploader)s", "%(title).100s.%(ext)s")
     opts["continuedl"] = True  # resume partial downloads
+
+    # ⚡ Ensure images also get downloaded
+    opts.setdefault("skip_download", False)
 
     def hook(d):
         if d["status"] == "downloading":
@@ -68,7 +149,6 @@ def download_worker(url, out_path, ydl_opts_base, retries, progress, task_id):
         elif d["status"] == "finished":
             console.print(f"[green]✅ Finished: {url}[/green]")
 
-    # silence yt-dlp extra logs
     opts.update({
         "quiet": True,
         "no_warnings": True,
@@ -79,14 +159,19 @@ def download_worker(url, out_path, ydl_opts_base, retries, progress, task_id):
     for attempt in range(retries):
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+                info = ydl.extract_info(url, download=True)
+
+                # ⚡ Special case: Instagram/Facebook image posts
+                if info.get("ext") in ["jpg", "png", "webp"]:
+                    console.print(f"[cyan]📷 Saved image post: {info.get('title','(no title)')}[/cyan]")
+
             return True
         except Exception as e:
             console.print(f"[red]Attempt {attempt+1}/{retries} failed: {e}[/red]")
             time.sleep(1)
+
     console.print(f"[red]Giving up on {url}[/red]")
     return False
-
 
 # ----------------- Path / Category Chooser -----------------
 def choose_download_target(config):
@@ -126,7 +211,6 @@ def choose_download_target(config):
         else:
             console.print("[yellow]Invalid choice[/yellow]")
 
-
 # ----------------- MAIN -----------------
 def main():
     config = load_config()
@@ -158,8 +242,6 @@ def main():
         console.print("\n[cyan]Paste links (empty = finish):[/cyan]")
         while True:
             line = input("> ").strip()
-
-            # Clean drag & drop artifacts
             line = line.strip().strip('"').strip("'")
             if line.lower().startswith("path"):
                 line = line[4:].lstrip("= :").strip().strip('"').strip("'")
@@ -182,7 +264,6 @@ def main():
         root.withdraw()
         if platform.system() == "Windows":
             winsound.MessageBeep()
-
         file_path = filedialog.askopenfilename(
             title="Select text file with links",
             filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
@@ -222,7 +303,6 @@ def main():
     else:
         thumb_opts = {}
 
-    # Base yt-dlp opts
     ydl_opts_base = {
         "format": format_code,
         "postprocessors": postprocessors,
@@ -236,20 +316,17 @@ def main():
 
     console.print(f"\n[cyan]Downloading {len(links)} items, {max_parallel} parallel...[/cyan]")
 
-    # Parallel playlist chunking
     with Progress(TextColumn("[bold]{task.description}"), BarColumn(), DownloadColumn(),
                   TransferSpeedColumn(), TimeRemainingColumn(), console=console) as progress:
         with ThreadPoolExecutor(max_workers=max_parallel) as executor:
             futures = []
             for url in links:
-                # Extract video title for progress bar
                 try:
                     with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
                         info = ydl.extract_info(url, download=False)
                         title = info.get("title", url)
                 except Exception:
-                    title = url  # fallback
-
+                    title = url
                 task_id = progress.add_task(title, total=0)
                 futures.append(executor.submit(download_worker, url, out_path, ydl_opts_base, retries, progress, task_id))
             for f in as_completed(futures):
@@ -257,7 +334,6 @@ def main():
 
     console.print("[green]✅ All downloads finished![/green]")
 
-    # Desktop notification
     try:
         notification.notify(
             title="Downloader",
@@ -267,7 +343,6 @@ def main():
     except Exception:
         pass
 
-    # Open folder
     try:
         if sys.platform == "win32":
             os.startfile(out_path)
@@ -278,8 +353,8 @@ def main():
     except Exception:
         pass
 
-
 if __name__ == "__main__":
+    check_for_update()   # Run updater first
     while True:
         try:
             main()

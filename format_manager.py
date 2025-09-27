@@ -17,6 +17,36 @@ def choose_format_and_postprocessors(url):
             with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
                 info = ydl.extract_info(url, download=False)
         formats = info.get("formats", [])
+
+        # 🔹 If this post/profile is image-only, show a simplified table
+        if formats and all(f.get("ext") in ["jpg", "png", "webp"] for f in formats):
+            table = Table(title="Available Image Formats")
+            table.add_column("Idx", justify="right", width=4)
+            table.add_column("ext", width=6)
+            table.add_column("resolution/note", width=15)
+            table.add_column("size", width=10)
+
+            for i, f in enumerate(formats, 1):
+                size = f.get("filesize") or f.get("filesize_approx")
+                size_str = f"{round(size/1024/1024,1)} MB" if size else "?"
+                table.add_row(str(i), f.get("ext", ""), f.get("format_note") or "-", size_str)
+
+            console.print(table)
+            console.print("[cyan]Options:[/cyan] [green]Index[/green]=Pick image format  [green]BACK[/green]=Go back")
+
+            while True:
+                choice = console.input("> ").strip().lower()
+                if choice.isdigit():
+                    idxn = int(choice) - 1
+                    if 0 <= idxn < len(formats):
+                        return str(formats[idxn].get("format_id")), []
+                    else:
+                        console.print("[yellow]Index out of range.[/yellow]")
+                elif choice == "back":
+                    return None, None
+                else:
+                    console.print("[yellow]Unknown option[/yellow]")
+
     except Exception as e:
         console.print(f"[red]Failed to fetch formats: {e}[/red]")
         return "bestvideo+bestaudio/best", []
